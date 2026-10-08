@@ -5,7 +5,7 @@ export interface Producto {
   precio: number;
   stock: number;
   categoria: string;
-  imagen: string;
+  imagenes: string[]; // la primera es la portada
 }
 
 export interface ItemCarrito {

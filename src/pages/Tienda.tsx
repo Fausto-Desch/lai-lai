@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Producto } from "../types";
 import { listarProductos } from "../services/productos";
 import { useCarrito } from "../context/CarritoContext";
+import NavBar from "../components/NavBar";
+import Hero from "../components/Hero";
 import ProductCard from "../components/ProductCard";
+import ProductoDetalle from "../components/ProductoDetalle";
+import UbicacionContacto from "../components/UbicacionContacto";
+import Footer from "../components/Footer";
 import Carrito from "../components/Carrito";
 
 export default function Tienda() {
@@ -10,10 +15,13 @@ export default function Tienda() {
   const [busqueda, setBusqueda] = useState("");
   const [categoria, setCategoria] = useState("Todas");
   const [carritoAbierto, setCarritoAbierto] = useState(false);
+  const [seleccionadoId, setSeleccionadoId] = useState<string | null>(null);
   const { agregar, cantidadTotal } = useCarrito();
 
   const cargar = useCallback(() => {
-    listarProductos().then(setProductos);
+    listarProductos().then((lista) =>
+      setProductos(lista.map((p) => ({ ...p, imagenes: p.imagenes ?? [] })))
+    );
   }, []);
 
   useEffect(() => {
@@ -35,24 +43,26 @@ export default function Tienda() {
     );
   }, [productos, busqueda, categoria]);
 
+  // Se busca por id para que el detalle siempre muestre el stock actualizado
+  const seleccionado = productos.find((p) => p.id === seleccionadoId);
+
+  const cerrarDetalle = useCallback(() => setSeleccionadoId(null), []);
+
+  const irAlCarrito = () => {
+    setSeleccionadoId(null);
+    setCarritoAbierto(true);
+  };
+
   return (
     <div className="min-h-screen bg-amber-50">
-      <header className="flex items-center justify-between bg-red-700 px-6 py-4 text-white shadow">
-        <h1 className="text-2xl font-bold">🏮 Bazar Lai Lai</h1>
-        <button
-          onClick={() => setCarritoAbierto(true)}
-          className="relative rounded-lg bg-white/10 px-4 py-2 font-medium hover:bg-white/20"
-        >
-          🛒 Carrito
-          {cantidadTotal > 0 && (
-            <span className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-xs font-bold text-red-900">
-              {cantidadTotal}
-            </span>
-          )}
-        </button>
-      </header>
+      <NavBar
+        cantidadTotal={cantidadTotal}
+        onAbrirCarrito={() => setCarritoAbierto(true)}
+      />
 
-      <main className="mx-auto max-w-6xl p-6">
+      <Hero />
+
+      <main id="productos" className="mx-auto max-w-6xl scroll-mt-20 p-6">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row">
           <input
             type="text"
@@ -79,11 +89,29 @@ export default function Tienda() {
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtrados.map((p) => (
-              <ProductCard key={p.id} producto={p} onAgregar={agregar} />
+              <ProductCard
+                key={p.id}
+                producto={p}
+                onAgregar={agregar}
+                onVer={(prod) => setSeleccionadoId(prod.id)}
+              />
             ))}
           </div>
         )}
       </main>
+
+      <UbicacionContacto />
+
+      <Footer />
+
+      {seleccionado && (
+        <ProductoDetalle
+          key={seleccionado.id}
+          producto={seleccionado}
+          onCerrar={cerrarDetalle}
+          onVerCarrito={irAlCarrito}
+        />
+      )}
 
       <Carrito
         abierto={carritoAbierto}

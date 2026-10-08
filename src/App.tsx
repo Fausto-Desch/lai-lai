@@ -5,7 +5,7 @@ import RutaProtegida from "./components/RutaProtegida";
 import Tienda from "./pages/Tienda";
 import AdminLogin from "./pages/AdminLogin";
 import Admin from "./pages/Admin";
-import Comprobante from "./pages/comprobante";
+import Comprobante from "./pages/Comprobante";
 
 export default function App() {
   return (

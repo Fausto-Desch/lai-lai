@@ -17,18 +17,20 @@ import { formatearPrecio } from "../utils/formato";
 import { archivoAImagen } from "../utils/imagen";
 import ListaPedidos from "../components/ListaPedidos";
 
+const MAX_IMAGENES = 5;
+
 const vacio = {
   nombre: "",
   descripcion: "",
   precio: "",
   stock: "",
   categoria: "",
-  imagen: "",
 };
 
 export default function Admin() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [form, setForm] = useState(vacio);
+  const [imagenes, setImagenes] = useState<string[]>([]);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const { logout } = useAuth();
@@ -47,22 +49,51 @@ export default function Admin() {
 
   const cancelar = () => {
     setForm(vacio);
+    setImagenes([]);
     setEditandoId(null);
     setError("");
   };
 
-  const subirImagen = async (e: ChangeEvent<HTMLInputElement>) => {
-    const archivo = e.target.files?.[0];
-    if (!archivo) return;
+  const subirImagenes = async (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const archivos = Array.from(input.files ?? []);
+    input.value = ""; // permite volver a elegir el mismo archivo
+    if (archivos.length === 0) return;
+
+    const lugar = MAX_IMAGENES - imagenes.length;
+    if (lugar <= 0) {
+      setError(`Máximo ${MAX_IMAGENES} imágenes por producto`);
+      return;
+    }
+
     try {
-      cambiar("imagen", await archivoAImagen(archivo));
-      setError("");
+      const nuevas = await Promise.all(
+        archivos.slice(0, lugar).map((f) => archivoAImagen(f))
+      );
+      setImagenes((prev) => [...prev, ...nuevas]);
+      setError(
+        archivos.length > lugar
+          ? `Máximo ${MAX_IMAGENES} imágenes: se agregaron solo las primeras ${lugar}`
+          : ""
+      );
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "No se pudo cargar la imagen"
       );
     }
   };
+
+  const quitarImagen = (i: number) =>
+    setImagenes((prev) => prev.filter((_, idx) => idx !== i));
+
+  const moverImagen = (i: number, delta: number) =>
+    setImagenes((prev) => {
+      const j = i + delta;
+      if (j < 0 || j >= prev.length) return prev;
+      const copia = [...prev];
+      [copia[i], copia[j]] = [copia[j], copia[i]];
+      return copia;
+    });
 
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
@@ -90,11 +121,11 @@ export default function Admin() {
         precio,
         stock,
         categoria: form.categoria.trim(),
-        imagen: form.imagen,
+        imagenes,
       });
     } catch {
       setError(
-        "No hay espacio para guardar. Eliminá productos o usá imágenes más chicas."
+        "No hay espacio para guardar. Eliminá productos o usá menos imágenes."
       );
       return;
     }
@@ -111,8 +142,9 @@ export default function Admin() {
       precio: String(p.precio),
       stock: String(p.stock),
       categoria: p.categoria,
-      imagen: p.imagen,
     });
+    setImagenes(p.imagenes);
+    setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -135,6 +167,8 @@ export default function Admin() {
 
   const input =
     "w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-red-600";
+  const botonMini =
+    "flex h-6 w-6 items-center justify-center rounded bg-white/90 text-xs shadow hover:bg-white disabled:opacity-30";
 
   return (
     <div className="min-h-screen bg-amber-50">
@@ -187,35 +221,73 @@ export default function Admin() {
             onChange={(e) => cambiar("stock", e.target.value)}
           />
 
-          <div className="flex items-center gap-4 sm:col-span-2">
-            {form.imagen ? (
-              <img
-                src={form.imagen}
-                alt="Vista previa"
-                className="h-20 w-20 rounded-lg object-cover"
-              />
-            ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-lg bg-red-50 text-3xl">
-                🏮
+          {/* Imágenes */}
+          <div className="flex flex-col gap-3 sm:col-span-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="cursor-pointer rounded-lg border border-red-700 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50">
+                📷 Agregar fotos
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={subirImagenes}
+                  className="hidden"
+                />
+              </label>
+              <span className="text-sm text-gray-500">
+                {imagenes.length}/{MAX_IMAGENES} · la primera es la portada
+              </span>
+            </div>
+
+            {imagenes.length > 0 && (
+              <div className="flex flex-wrap gap-3">
+                {imagenes.map((src, i) => (
+                  <div
+                    key={i}
+                    className="relative h-24 w-24 overflow-hidden rounded-lg border"
+                  >
+                    <img
+                      src={src}
+                      alt={`Foto ${i + 1}`}
+                      className="h-full w-full object-cover"
+                    />
+                    {i === 0 && (
+                      <span className="absolute left-1 top-1 rounded bg-red-700 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        Portada
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => quitarImagen(i)}
+                      aria-label="Quitar foto"
+                      className={`${botonMini} absolute right-1 top-1 text-red-700`}
+                    >
+                      ×
+                    </button>
+                    <div className="absolute bottom-1 left-1 right-1 flex justify-between">
+                      <button
+                        type="button"
+                        onClick={() => moverImagen(i, -1)}
+                        disabled={i === 0}
+                        aria-label="Mover a la izquierda"
+                        className={botonMini}
+                      >
+                        ◀
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moverImagen(i, 1)}
+                        disabled={i === imagenes.length - 1}
+                        aria-label="Mover a la derecha"
+                        className={botonMini}
+                      >
+                        ▶
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
-            <div className="flex flex-col gap-2">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={subirImagen}
-                className="text-sm"
-              />
-              {form.imagen && (
-                <button
-                  type="button"
-                  onClick={() => cambiar("imagen", "")}
-                  className="self-start text-sm text-red-700 hover:underline"
-                >
-                  Quitar imagen
-                </button>
-              )}
-            </div>
           </div>
 
           <textarea
@@ -268,9 +340,9 @@ export default function Admin() {
                 <tr key={p.id} className="border-t">
                   <td className="p-3">
                     <div className="flex items-center gap-3">
-                      {p.imagen ? (
+                      {p.imagenes[0] ? (
                         <img
-                          src={p.imagen}
+                          src={p.imagenes[0]}
                           alt={p.nombre}
                           className="h-10 w-10 rounded object-cover"
                         />
@@ -279,7 +351,14 @@ export default function Admin() {
                           🏮
                         </div>
                       )}
-                      <span className="font-medium">{p.nombre}</span>
+                      <div>
+                        <span className="font-medium">{p.nombre}</span>
+                        {p.imagenes.length > 1 && (
+                          <span className="ml-2 text-xs text-gray-500">
+                            📷 {p.imagenes.length}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="p-3">{p.categoria}</td>

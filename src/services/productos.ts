@@ -10,7 +10,7 @@ const iniciales: Producto[] = [
     precio: 3500,
     stock: 25,
     categoria: "Cocina",
-    imagen: "",
+    imagenes: [],
   },
   {
     id: "2",
@@ -19,14 +19,25 @@ const iniciales: Producto[] = [
     precio: 5200,
     stock: 12,
     categoria: "Cocina",
-    imagen: "",
+    imagenes: [],
   },
 ];
+
+// Productos guardados con la versión anterior tenían un solo campo "imagen"
+type ProductoGuardado = Omit<Producto, "imagenes"> & {
+  imagenes?: string[];
+  imagen?: string;
+};
+
+function normalizar(p: ProductoGuardado): Producto {
+  const { imagen, imagenes, ...resto } = p;
+  return { ...resto, imagenes: imagenes ?? (imagen ? [imagen] : []) };
+}
 
 function leer(): Producto[] {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw) as Producto[];
+    if (raw) return (JSON.parse(raw) as ProductoGuardado[]).map(normalizar);
   } catch {
     // si el dato está corrupto, arrancamos de cero
   }
