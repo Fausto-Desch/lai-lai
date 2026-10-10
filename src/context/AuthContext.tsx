@@ -1,11 +1,21 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { ADMIN_USUARIO, ADMIN_CLAVE } from "../config";
-
-const KEY = "lai-lai-admin-sesion";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  api,
+  borrarToken,
+  EVENTO_SESION_VENCIDA,
+  guardarToken,
+  obtenerToken,
+} from "../services/api";
 
 interface AuthCtx {
   esAdmin: boolean;
-  login: (usuario: string, clave: string) => boolean;
+  login: (usuario: string, clave: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -13,21 +23,32 @@ const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   // sessionStorage: la sesión se cierra sola al cerrar la pestaña
-  const [esAdmin, setEsAdmin] = useState(
-    () => sessionStorage.getItem(KEY) === "1"
-  );
+  const [esAdmin, setEsAdmin] = useState(() => obtenerToken() !== null);
 
-  const login = (usuario: string, clave: string) => {
-    if (usuario === ADMIN_USUARIO && clave === ADMIN_CLAVE) {
-      sessionStorage.setItem(KEY, "1");
-      setEsAdmin(true);
-      return true;
+  useEffect(() => {
+    const alVencer = () => setEsAdmin(false);
+    window.addEventListener(EVENTO_SESION_VENCIDA, alVencer);
+
+    // Si había una sesión guardada, confirmamos que el servidor la acepta
+    if (obtenerToken()) {
+      api("/auth/verificar", { auth: true }).catch(() => {});
     }
-    return false;
+
+    return () => window.removeEventListener(EVENTO_SESION_VENCIDA, alVencer);
+  }, []);
+
+  // Lanza un error con el mensaje del servidor si las credenciales no sirven
+  const login = async (usuario: string, clave: string) => {
+    const { token } = await api<{ token: string }>("/auth/login", {
+      metodo: "POST",
+      cuerpo: { usuario, clave },
+    });
+    guardarToken(token);
+    setEsAdmin(true);
   };
 
   const logout = () => {
-    sessionStorage.removeItem(KEY);
+    borrarToken();
     setEsAdmin(false);
   };
 

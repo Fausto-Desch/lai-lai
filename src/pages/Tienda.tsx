@@ -17,11 +17,15 @@ export default function Tienda() {
   const [carritoAbierto, setCarritoAbierto] = useState(false);
   const [seleccionadoId, setSeleccionadoId] = useState<string | null>(null);
   const { agregar, cantidadTotal } = useCarrito();
+  const [errorCarga, setErrorCarga] = useState(false);
 
   const cargar = useCallback(() => {
-    listarProductos().then((lista) =>
-      setProductos(lista.map((p) => ({ ...p, imagenes: p.imagenes ?? [] })))
-    );
+    listarProductos()
+      .then((lista) => {
+        setProductos(lista.map((p) => ({ ...p, imagenes: p.imagenes ?? [] })));
+        setErrorCarga(false);
+      })
+      .catch(() => setErrorCarga(true));
   }, []);
 
   useEffect(() => {
@@ -63,6 +67,11 @@ export default function Tienda() {
       <Hero />
 
       <main id="productos" className="mx-auto max-w-6xl scroll-mt-20 p-6">
+        {errorCarga && (
+          <p className="mb-4 text-center text-red-600">
+            No se pudieron cargar los productos.
+          </p>
+        )}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row">
           <input
             type="text"
@@ -82,7 +91,19 @@ export default function Tienda() {
           </select>
         </div>
 
-        {filtrados.length === 0 ? (
+       {errorCarga ? (
+  <div className="py-12 text-center">
+    <p className="mb-3 text-gray-600">
+      No se pudo cargar el catálogo. Revisá que el servidor esté encendido.
+    </p>
+    <button
+      onClick={cargar}
+      className="rounded-lg bg-red-700 px-5 py-2 font-semibold text-white hover:bg-red-800"
+    >
+      Reintentar
+    </button>
+  </div>
+) : filtrados.length === 0 ? (
           <p className="py-12 text-center text-gray-500">
             No se encontraron productos.
           </p>

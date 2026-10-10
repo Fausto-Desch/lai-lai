@@ -1,95 +1,29 @@
 import type { Producto } from "../types";
+import { api } from "./api";
 
-const KEY = "lai-lai-productos";
+// Lo que se manda al crear o editar. Las imágenes pueden ser rutas que ya
+// existen ("/uploads/...") o fotos nuevas en base64: el servidor distingue.
+export type DatosProducto = Omit<Producto, "id">;
 
-const iniciales: Producto[] = [
-  {
-    id: "1",
-    nombre: "Set de palillos",
-    descripcion: "Pack de 10 pares de palillos de bambú",
-    precio: 3500,
-    stock: 25,
-    categoria: "Cocina",
-    imagenes: [],
-  },
-  {
-    id: "2",
-    nombre: "Taza de cerámica",
-    descripcion: "Taza con diseño de dragón",
-    precio: 5200,
-    stock: 12,
-    categoria: "Cocina",
-    imagenes: [],
-  },
-];
+export const listarProductos = () => api<Producto[]>("/productos");
 
-// Productos guardados con la versión anterior tenían un solo campo "imagen"
-type ProductoGuardado = Omit<Producto, "imagenes"> & {
-  imagenes?: string[];
-  imagen?: string;
-};
+export const crearProducto = (datos: DatosProducto) =>
+  api<Producto>("/productos", { metodo: "POST", cuerpo: datos, auth: true });
 
-function normalizar(p: ProductoGuardado): Producto {
-  const { imagen, imagenes, ...resto } = p;
-  return { ...resto, imagenes: imagenes ?? (imagen ? [imagen] : []) };
-}
+export const actualizarProducto = (id: string, datos: DatosProducto) =>
+  api<Producto>(`/productos/${id}`, {
+    metodo: "PUT",
+    cuerpo: datos,
+    auth: true,
+  });
 
-function leer(): Producto[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return (JSON.parse(raw) as ProductoGuardado[]).map(normalizar);
-  } catch {
-    // si el dato está corrupto, arrancamos de cero
-  }
-  localStorage.setItem(KEY, JSON.stringify(iniciales));
-  return iniciales;
-}
+// Suma o resta unidades de stock (delta puede ser negativo)
+export const modificarStock = (id: string, delta: number) =>
+  api<Producto>(`/productos/${id}/stock`, {
+    metodo: "PATCH",
+    cuerpo: { delta },
+    auth: true,
+  });
 
-function guardar(productos: Producto[]) {
-  localStorage.setItem(KEY, JSON.stringify(productos));
-}
-
-export async function listarProductos(): Promise<Producto[]> {
-  return leer();
-}
-
-export async function guardarProducto(p: Producto): Promise<void> {
-  const productos = leer();
-  const i = productos.findIndex((x) => x.id === p.id);
-  if (i >= 0) productos[i] = p;
-  else productos.push(p);
-  guardar(productos);
-}
-
-export async function eliminarProducto(id: string): Promise<void> {
-  guardar(leer().filter((p) => p.id !== id));
-}
-
-// Valida todo antes de modificar nada: la compra nunca queda a medias
-export async function descontarStock(
-  items: { productoId: string; cantidad: number }[]
-): Promise<void> {
-  const productos = leer();
-  for (const item of items) {
-    const p = productos.find((x) => x.id === item.productoId);
-    if (!p || p.stock < item.cantidad) {
-      throw new Error(`Stock insuficiente para ${p?.nombre ?? "un producto"}`);
-    }
-  }
-  for (const item of items) {
-    const p = productos.find((x) => x.id === item.productoId)!;
-    p.stock -= item.cantidad;
-  }
-  guardar(productos);
-}
-
-export async function reponerStock(
-  items: { productoId: string; cantidad: number }[]
-): Promise<void> {
-  const productos = leer();
-  for (const item of items) {
-    const p = productos.find((x) => x.id === item.productoId);
-    if (p) p.stock += item.cantidad;
-  }
-  guardar(productos);
-}
+export const eliminarProducto = (id: string) =>
+  api<void>(`/productos/${id}`, { metodo: "DELETE", auth: true });

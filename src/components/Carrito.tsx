@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { MetodoPago, Pedido, Producto } from "../types";
 import { useCarrito } from "../context/CarritoContext";
-import { descontarStock, reponerStock } from "../services/productos";
 import { crearPedido } from "../services/pedidos";
+import { ErrorApi } from "../services/api";
 import { procesarPagoTarjeta, type DatosTarjeta } from "../services/pagos";
 import { formatearPrecio } from "../utils/formato";
 import {
@@ -84,52 +84,33 @@ export default function Carrito({
       }
     }
 
-    const itemsPedido = lineas.map((l) => ({
-      productoId: l.producto.id,
-      cantidad: l.cantidad,
-    }));
-
     setProcesando(true);
     try {
-      // 1. Reservamos el stock (valida que alcance, todo o nada)
-      await descontarStock(itemsPedido);
-
-      // 2. Si es tarjeta, procesamos el pago; si falla, devolvemos el stock
+      // 1. Pago con tarjeta (simulado). Si lo rechazan, no se crea el pedido.
       let ultimos4: string | undefined;
       if (metodo === "tarjeta") {
         const res = await procesarPagoTarjeta(tarjeta, total);
         if (!res.aprobado) {
-          await reponerStock(itemsPedido);
           setError(res.motivo ?? "No se pudo procesar el pago");
           return;
         }
         ultimos4 = res.ultimos4;
       }
 
-      // 3. Registramos el pedido
-      let nuevo: Pedido;
-      try {
-        nuevo = await crearPedido({
-          comprador: {
-            nombre: datos.nombre.trim(),
-            telefono: datos.telefono.trim(),
-            direccion: datos.direccion.trim(),
-          },
-          items: lineas.map((l) => ({
-            productoId: l.producto.id,
-            nombre: l.producto.nombre,
-            precio: l.producto.precio,
-            cantidad: l.cantidad,
-          })),
-          total,
-          metodoPago: metodo,
-          estado: metodo === "tarjeta" ? "pagado" : "pendiente",
-          tarjetaUltimos4: ultimos4,
-        });
-      } catch {
-        await reponerStock(itemsPedido);
-        throw new Error("No se pudo registrar el pedido. Probá de nuevo.");
-      }
+      // 2. El servidor valida el stock, descuenta y registra el pedido
+      const nuevo = await crearPedido({
+        comprador: {
+          nombre: datos.nombre.trim(),
+          telefono: datos.telefono.trim(),
+          direccion: datos.direccion.trim(),
+        },
+        items: lineas.map((l) => ({
+          productoId: l.producto.id,
+          cantidad: l.cantidad,
+        })),
+        metodoPago: metodo,
+        tarjetaUltimos4: ultimos4,
+      });
 
       vaciar();
       setDatos(datosVacios);
@@ -140,6 +121,8 @@ export default function Carrito({
       setError(
         e instanceof Error ? e.message : "No se pudo completar la compra"
       );
+      // Sin stock o producto eliminado: refrescamos el catálogo
+      if (e instanceof ErrorApi && e.estado === 409) onCompraExitosa();
     } finally {
       setProcesando(false);
     }
@@ -358,7 +341,8 @@ export default function Carrito({
                       />
                     </div>
                     <p className="text-xs text-gray-500">
-                      Modo demostración: no se realiza ningún cobro real.
+                      Modo demostración: no se realiza ningún cobro real y los
+                      datos de la tarjeta no se guardan.
                     </p>
                   </div>
                 )}

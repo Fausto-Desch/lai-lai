@@ -1,77 +1,47 @@
-import type { EstadoPedido, Pedido } from "../types";
-import { reponerStock } from "./productos";
+import type { EstadoPedido, MetodoPago, Pedido } from "../types";
+import { api } from "./api";
 
-const KEY = "lai-lai-pedidos";
+export interface NuevoPedido {
+  comprador: Pedido["comprador"];
+  items: { productoId: string; cantidad: number }[];
+  metodoPago: MetodoPago;
+  tarjetaUltimos4?: string;
+}
 
-export type NuevoPedido = Omit<Pedido, "id" | "codigo" | "fecha">;
+export interface FiltrosPedidos {
+  estado?: EstadoPedido;
+  metodo?: MetodoPago;
+  desde?: string; // fecha ISO
+  hasta?: string; // fecha ISO
+  q?: string; // código o nombre del cliente
+}
 
-function leer(): Pedido[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      return (JSON.parse(raw) as Partial<Pedido>[]).map((p) => ({
-        ...p,
-        codigo: p.codigo ?? (p.id ?? "").slice(0, 8).toUpperCase(),
-        metodoPago: p.metodoPago ?? "efectivo",
-        estado: p.estado ?? "pendiente",
-      })) as Pedido[];
-    }
-  } catch {
-    // dato corrupto: arrancamos de cero
+// El precio y el total los calcula el servidor
+export const crearPedido = (datos: NuevoPedido) =>
+  api<Pedido>("/pedidos", { metodo: "POST", cuerpo: datos });
+
+// Para el comprobante del cliente. Devuelve null si no existe.
+export const obtenerPedido = (id: string) =>
+  api<Pedido>(`/pedidos/${id}`).catch(() => null);
+
+// Historial del admin
+export function listarPedidos(filtros: FiltrosPedidos = {}) {
+  const params = new URLSearchParams();
+  for (const [clave, valor] of Object.entries(filtros)) {
+    if (valor) params.set(clave, valor);
   }
-  return [];
+  const consulta = params.toString();
+  return api<Pedido[]>(`/pedidos${consulta ? `?${consulta}` : ""}`, {
+    auth: true,
+  });
 }
 
-function guardar(lista: Pedido[]) {
-  localStorage.setItem(KEY, JSON.stringify(lista));
-}
+export const cambiarEstado = (id: string, estado: EstadoPedido) =>
+  api<Pedido>(`/pedidos/${id}`, {
+    metodo: "PATCH",
+    cuerpo: { estado },
+    auth: true,
+  });
 
-// Sin letras ni números ambiguos (0/O, 1/I) para que sea fácil de dictar
-function generarCodigo(existentes: Set<string>): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let codigo = "";
-  do {
-    codigo = "LL-";
-    for (let i = 0; i < 6; i++) {
-      codigo += chars[Math.floor(Math.random() * chars.length)];
-    }
-  } while (existentes.has(codigo));
-  return codigo;
-}
-
-export async function listarPedidos(): Promise<Pedido[]> {
-  return leer().sort((a, b) => b.fecha.localeCompare(a.fecha));
-}
-
-export async function obtenerPedido(id: string): Promise<Pedido | null> {
-  return leer().find((p) => p.id === id) ?? null;
-}
-
-export async function crearPedido(datos: NuevoPedido): Promise<Pedido> {
-  const lista = leer();
-  const pedido: Pedido = {
-    ...datos,
-    id: crypto.randomUUID(),
-    codigo: generarCodigo(new Set(lista.map((p) => p.codigo))),
-    fecha: new Date().toISOString(),
-  };
-  lista.push(pedido);
-  guardar(lista);
-  return pedido;
-}
-
-export async function cambiarEstado(
-  id: string,
-  estado: EstadoPedido
-): Promise<void> {
-  guardar(leer().map((p) => (p.id === id ? { ...p, estado } : p)));
-}
-
-export async function cancelarPedido(id: string): Promise<void> {
-  const lista = leer();
-  const pedido = lista.find((p) => p.id === id);
-  if (!pedido || pedido.estado === "cancelado") return;
-
-  await reponerStock(pedido.items);
-  guardar(lista.map((p) => (p.id === id ? { ...p, estado: "cancelado" } : p)));
-}
+// Cancelar repone el stock (lo hace el servidor)
+export const cancelarPedido = (id: string) => cambiarEstado(id, "cancelado");

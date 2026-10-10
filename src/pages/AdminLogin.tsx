@@ -6,13 +6,24 @@ export default function AdminLogin() {
   const [usuario, setUsuario] = useState("");
   const [clave, setClave] = useState("");
   const [error, setError] = useState("");
+  const [cargando, setCargando] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const enviar = (e: FormEvent) => {
+  const enviar = async (e: FormEvent) => {
     e.preventDefault();
-    if (login(usuario, clave)) navigate("/admin");
-    else setError("Usuario o contraseña incorrectos");
+    setError("");
+    setCargando(true);
+    try {
+      await login(usuario, clave);
+      navigate("/admin");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "No se pudo iniciar sesión"
+      );
+    } finally {
+      setCargando(false);
+    }
   };
 
   return (
@@ -49,9 +60,10 @@ export default function AdminLogin() {
 
         <button
           type="submit"
-          className="w-full rounded-lg bg-red-700 py-2 font-semibold text-white hover:bg-red-800"
+          disabled={cargando}
+          className="w-full rounded-lg bg-red-700 py-2 font-semibold text-white hover:bg-red-800 disabled:cursor-wait disabled:opacity-60"
         >
-          Ingresar
+          {cargando ? "Ingresando..." : "Ingresar"}
         </button>
       </form>
     </div>

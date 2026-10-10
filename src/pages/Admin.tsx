@@ -8,9 +8,11 @@ import {
 import { useNavigate } from "react-router-dom";
 import type { Producto } from "../types";
 import {
-  listarProductos,
-  guardarProducto,
+  actualizarProducto,
+  crearProducto,
   eliminarProducto,
+  listarProductos,
+  modificarStock,
 } from "../services/productos";
 import { useAuth } from "../context/AuthContext";
 import { formatearPrecio } from "../utils/formato";
@@ -27,17 +29,23 @@ const vacio = {
   categoria: "",
 };
 
+const mensajeDe = (err: unknown, porDefecto: string) =>
+  err instanceof Error ? err.message : porDefecto;
+
 export default function Admin() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [form, setForm] = useState(vacio);
   const [imagenes, setImagenes] = useState<string[]>([]);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
   const { logout } = useAuth();
   const navigate = useNavigate();
 
   const cargar = useCallback(() => {
-    listarProductos().then(setProductos);
+    listarProductos()
+      .then(setProductos)
+      .catch(() => setError("No se pudo cargar la lista de productos"));
   }, []);
 
   useEffect(() => {
@@ -77,9 +85,7 @@ export default function Admin() {
           : ""
       );
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "No se pudo cargar la imagen"
-      );
+      setError(mensajeDe(err, "No se pudo cargar la imagen"));
     }
   };
 
@@ -104,8 +110,8 @@ export default function Admin() {
       setError("Nombre y categoría son obligatorios");
       return;
     }
-    if (!Number.isFinite(precio) || precio <= 0) {
-      setError("El precio debe ser mayor a 0");
+    if (!Number.isInteger(precio) || precio <= 0) {
+      setError("El precio debe ser un número entero mayor a 0 (en pesos)");
       return;
     }
     if (!Number.isInteger(stock) || stock < 0) {
@@ -113,25 +119,26 @@ export default function Admin() {
       return;
     }
 
-    try {
-      await guardarProducto({
-        id: editandoId ?? crypto.randomUUID(),
-        nombre: form.nombre.trim(),
-        descripcion: form.descripcion.trim(),
-        precio,
-        stock,
-        categoria: form.categoria.trim(),
-        imagenes,
-      });
-    } catch {
-      setError(
-        "No hay espacio para guardar. Eliminá productos o usá menos imágenes."
-      );
-      return;
-    }
+    const datos = {
+      nombre: form.nombre.trim(),
+      descripcion: form.descripcion.trim(),
+      precio,
+      stock,
+      categoria: form.categoria.trim(),
+      imagenes,
+    };
 
-    cancelar();
-    cargar();
+    setGuardando(true);
+    try {
+      if (editandoId) await actualizarProducto(editandoId, datos);
+      else await crearProducto(datos);
+      cancelar();
+      cargar();
+    } catch (err) {
+      setError(mensajeDe(err, "No se pudo guardar el producto"));
+    } finally {
+      setGuardando(false);
+    }
   };
 
   const editar = (p: Producto) => {
@@ -150,14 +157,21 @@ export default function Admin() {
 
   const eliminar = async (p: Producto) => {
     if (!confirm(`¿Eliminar "${p.nombre}"?`)) return;
-    await eliminarProducto(p.id);
-    cargar();
+    try {
+      await eliminarProducto(p.id);
+      cargar();
+    } catch (err) {
+      alert(mensajeDe(err, "No se pudo eliminar el producto"));
+    }
   };
 
-  const ajustarStock = async (p: Producto, delta: number) => {
-    const nuevo = Math.max(0, p.stock + delta);
-    await guardarProducto({ ...p, stock: nuevo });
-    cargar();
+  const cambiarStock = async (p: Producto, delta: number) => {
+    try {
+      await modificarStock(p.id, delta);
+      cargar();
+    } catch (err) {
+      alert(mensajeDe(err, "No se pudo cambiar el stock"));
+    }
   };
 
   const salir = () => {
@@ -307,9 +321,14 @@ export default function Admin() {
           <div className="flex gap-3 sm:col-span-2">
             <button
               type="submit"
-              className="rounded-lg bg-red-700 px-6 py-2 font-semibold text-white hover:bg-red-800"
+              disabled={guardando}
+              className="rounded-lg bg-red-700 px-6 py-2 font-semibold text-white hover:bg-red-800 disabled:cursor-wait disabled:opacity-60"
             >
-              {editandoId ? "Guardar cambios" : "Agregar producto"}
+              {guardando
+                ? "Guardando..."
+                : editandoId
+                ? "Guardar cambios"
+                : "Agregar producto"}
             </button>
             {editandoId && (
               <button
@@ -366,14 +385,14 @@ export default function Admin() {
                   <td className="p-3">
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => ajustarStock(p, -1)}
+                        onClick={() => cambiarStock(p, -1)}
                         className="h-7 w-7 rounded border hover:bg-gray-100"
                       >
                         −
                       </button>
                       <span className="w-8 text-center">{p.stock}</span>
                       <button
-                        onClick={() => ajustarStock(p, 1)}
+                        onClick={() => cambiarStock(p, 1)}
                         className="h-7 w-7 rounded border hover:bg-gray-100"
                       >
                         +
