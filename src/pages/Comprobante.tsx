@@ -37,7 +37,7 @@ export default function Comprobante() {
     <div className="min-h-screen bg-amber-50 p-4 print:bg-white print:p-0">
       <div className="mx-auto max-w-2xl rounded-xl bg-white p-8 shadow-md print:max-w-none print:shadow-none">
         <div className="mb-6 border-b pb-4 text-center">
-          <h1 className="text-2xl font-bold text-red-700">🏮 Bazar Lai Lai</h1>
+          <h1 className="text-2xl font-bold text-red-700">🏮  Lai Lai</h1>
           <p className="text-gray-600">Comprobante de pedido</p>
         </div>
 

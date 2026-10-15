@@ -2,7 +2,7 @@ export const ADMIN_USUARIO = "admin";
 export const ADMIN_CLAVE = "lailai2026";
 
 export const LOCAL_INFO = {
-  nombre: "Bazar Lai Lai",
+  nombre: " Lai Lai",
   lema: "Todo para tu casa, en un solo lugar",
 
   direccion: "O Higgins 33", 
