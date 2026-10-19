@@ -39,3 +39,22 @@ if (JWT_SECRET.length < 16) {
   console.error("JWT_SECRET tiene que tener al menos 16 caracteres");
   process.exit(1);
 }
+
+/* ---------- Envíos con flete (todo opcional) ---------- */
+
+const numero = (nombre: string, porDefecto: number) => {
+  const crudo = process.env[nombre]?.trim();
+  const valor = Number(crudo);
+  return crudo && Number.isFinite(valor) && valor >= 0 ? valor : porDefecto;
+};
+
+export const ORS_API_KEY = process.env.ORS_API_KEY?.trim() ?? "";
+export const LOCAL_DIRECCION = process.env.LOCAL_DIRECCION?.trim() ?? "";
+export const PAIS_GEOCODIFICACION =
+  process.env.PAIS_GEOCODIFICACION?.trim() || "AR";
+export const FLETE_TELEFONO = (process.env.FLETE_TELEFONO ?? "").replace(
+  /\D/g,
+  ""
+);
+export const FLETE_TARIFA_BASE = numero("FLETE_TARIFA_BASE", 0);
+export const FLETE_PRECIO_KM = numero("FLETE_PRECIO_KM", 0);

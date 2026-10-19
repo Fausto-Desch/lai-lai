@@ -3,6 +3,15 @@ import { randomInt, randomUUID } from "node:crypto";
 import { db } from "../db";
 import { requerirAdmin } from "../auth";
 import { ErrorNegocio } from "../errores";
+import { LOCAL_DIRECCION } from "../config";
+import { calcularRuta, type Ruta } from "../servicios/mapas";
+import {
+  aFlete,
+  calcularGanancia,
+  generarCodigoFlete,
+  generarToken,
+  type FilaFlete,
+} from "../servicios/flete";
 
 export const rutasPedidos = Router();
 
@@ -10,6 +19,7 @@ const METODOS = ["efectivo", "tarjeta"] as const;
 const ESTADOS = ["pendiente", "pagado", "cancelado"] as const;
 type Metodo = (typeof METODOS)[number];
 type Estado = (typeof ESTADOS)[number];
+type Entrega = "retiro" | "envio";
 
 interface FilaPedido {
   id: string;
@@ -22,6 +32,7 @@ interface FilaPedido {
   metodo_pago: Metodo;
   estado: Estado;
   tarjeta_ultimos4: string | null;
+  entrega: Entrega;
 }
 
 interface FilaItem {
@@ -32,15 +43,21 @@ interface FilaItem {
 }
 
 const COLUMNAS = `id, codigo, fecha, comprador_nombre, comprador_telefono,
-  comprador_direccion, total, metodo_pago, estado, tarjeta_ultimos4`;
+  comprador_direccion, total, metodo_pago, estado, tarjeta_ultimos4, entrega`;
 
 const itemsDe = db.prepare(
   "SELECT producto_id, nombre, precio, cantidad FROM pedido_items WHERE pedido_id = ? ORDER BY id"
 );
+const obtenerFlete = db.prepare("SELECT * FROM fletes WHERE pedido_id = ?");
 
-// Misma forma que el tipo Pedido del frontend
-function aPedido(f: FilaPedido) {
+// Misma forma que el tipo Pedido del frontend. Los datos del flete
+// (ganancia, etc.) solo se incluyen en las respuestas del admin.
+function aPedido(f: FilaPedido, conFlete = false) {
   const items = itemsDe.all(f.id) as FilaItem[];
+  const flete = conFlete
+    ? (obtenerFlete.get(f.id) as FilaFlete | undefined)
+    : undefined;
+
   return {
     id: f.id,
     codigo: f.codigo,
@@ -59,7 +76,22 @@ function aPedido(f: FilaPedido) {
     total: f.total,
     metodoPago: f.metodo_pago,
     estado: f.estado,
+    entrega: f.entrega,
     ...(f.tarjeta_ultimos4 ? { tarjetaUltimos4: f.tarjeta_ultimos4 } : {}),
+    ...(flete
+      ? {
+          flete: aFlete(
+            flete,
+            {
+              total: f.total,
+              metodoPago: f.metodo_pago,
+              nombre: f.comprador_nombre,
+              telefono: f.comprador_telefono,
+            },
+            items
+          ),
+        }
+      : {}),
   };
 }
 
@@ -77,6 +109,7 @@ interface DatosPedido {
   nombre: string;
   telefono: string;
   direccion: string;
+  entrega: Entrega;
   items: { productoId: string; cantidad: number }[];
   metodo: Metodo;
   ultimos4: string | null;
@@ -91,9 +124,14 @@ function validarPedido(body: unknown): DatosPedido {
 
   const nombre = texto(comprador.nombre, 100);
   const telefono = texto(comprador.telefono, 40);
-  const direccion = texto(comprador.direccion, 200);
+  const entrega: Entrega = b.entrega === "envio" ? "envio" : "retiro";
+  const direccion = entrega === "envio" ? texto(comprador.direccion, 200) : "";
+
   if (!nombre || !telefono) {
     throw new ErrorNegocio("Nombre y teléfono son obligatorios");
+  }
+  if (entrega === "envio" && direccion.length < 5) {
+    throw new ErrorNegocio("Ingresá la dirección de entrega");
   }
 
   if (!Array.isArray(b.items) || b.items.length === 0 || b.items.length > 50) {
@@ -135,6 +173,7 @@ function validarPedido(body: unknown): DatosPedido {
     nombre,
     telefono,
     direccion,
+    entrega,
     items: [...acumulado].map(([productoId, cantidad]) => ({ productoId, cantidad })),
     metodo,
     ultimos4,
@@ -150,12 +189,18 @@ const existeCodigo = db.prepare("SELECT 1 FROM pedidos WHERE codigo = ?");
 const insertarPedido = db.prepare(
   `INSERT INTO pedidos
    (id, codigo, fecha, comprador_nombre, comprador_telefono, comprador_direccion,
-    total, metodo_pago, estado, tarjeta_ultimos4)
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    total, metodo_pago, estado, tarjeta_ultimos4, entrega)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 const insertarItem = db.prepare(
   `INSERT INTO pedido_items (pedido_id, producto_id, nombre, precio, cantidad)
    VALUES (?, ?, ?, ?, ?)`
+);
+const insertarFlete = db.prepare(
+  `INSERT INTO fletes
+   (id, pedido_id, codigo, token, origen_direccion, destino_direccion,
+    destino_lat, destino_lng, distancia_km, ganancia, estado, creado_en)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)`
 );
 
 // Sin letras ni números ambiguos (0/O, 1/I) para que sea fácil de dictar
@@ -170,51 +215,82 @@ function generarCodigo(): string {
 }
 
 // Todo dentro de una transacción: o se guarda todo, o no se guarda nada
-const crearPedido = db.transaction((datos: DatosPedido): string => {
-  let total = 0;
-  const lineas = datos.items.map((it) => {
-    const producto = obtenerProducto.get(it.productoId) as
-      | { nombre: string; precio: number; stock: number }
-      | undefined;
-    if (!producto) {
-      throw new ErrorNegocio("Un producto del carrito ya no está disponible", 409);
-    }
-    if (producto.stock < it.cantidad) {
-      throw new ErrorNegocio(`Stock insuficiente para ${producto.nombre}`, 409);
-    }
-    descontar.run(it.cantidad, it.productoId);
-    total += producto.precio * it.cantidad; // el precio sale de la base
-    return {
-      productoId: it.productoId,
-      nombre: producto.nombre,
-      precio: producto.precio,
-      cantidad: it.cantidad,
-    };
-  });
+const crearPedido = db.transaction(
+  (datos: DatosPedido, ruta: Ruta | null): string => {
+    let total = 0;
+    const lineas = datos.items.map((it) => {
+      const producto = obtenerProducto.get(it.productoId) as
+        | { nombre: string; precio: number; stock: number }
+        | undefined;
+      if (!producto) {
+        throw new ErrorNegocio("Un producto del carrito ya no está disponible", 409);
+      }
+      if (producto.stock < it.cantidad) {
+        throw new ErrorNegocio(`Stock insuficiente para ${producto.nombre}`, 409);
+      }
+      descontar.run(it.cantidad, it.productoId);
+      total += producto.precio * it.cantidad; // el precio sale de la base
+      return {
+        productoId: it.productoId,
+        nombre: producto.nombre,
+        precio: producto.precio,
+        cantidad: it.cantidad,
+      };
+    });
 
-  const id = randomUUID();
-  insertarPedido.run(
-    id,
-    generarCodigo(),
-    new Date().toISOString(),
-    datos.nombre,
-    datos.telefono,
-    datos.direccion,
-    total,
-    datos.metodo,
-    datos.metodo === "tarjeta" ? "pagado" : "pendiente",
-    datos.ultimos4
-  );
-  for (const l of lineas) {
-    insertarItem.run(id, l.productoId, l.nombre, l.precio, l.cantidad);
+    const id = randomUUID();
+    const ahora = new Date().toISOString();
+
+    insertarPedido.run(
+      id,
+      generarCodigo(),
+      ahora,
+      datos.nombre,
+      datos.telefono,
+      datos.direccion,
+      total,
+      datos.metodo,
+      datos.metodo === "tarjeta" ? "pagado" : "pendiente",
+      datos.ultimos4,
+      datos.entrega
+    );
+    for (const l of lineas) {
+      insertarItem.run(id, l.productoId, l.nombre, l.precio, l.cantidad);
+    }
+
+    // Con envío, se crea el viaje del flete junto con el pedido
+    if (datos.entrega === "envio") {
+      const km = ruta?.km ?? null;
+      insertarFlete.run(
+        randomUUID(),
+        id,
+        generarCodigoFlete(),
+        generarToken(),
+        LOCAL_DIRECCION,
+        datos.direccion,
+        ruta?.destino?.lat ?? null,
+        ruta?.destino?.lng ?? null,
+        km,
+        calcularGanancia(km),
+        ahora
+      );
+    }
+
+    return id;
   }
-  return id;
-});
+);
 
 // Público: lo usa el cliente al comprar
-rutasPedidos.post("/", (req, res) => {
-  const id = crearPedido(validarPedido(req.body));
-  res.status(201).json(aPedido(leerPedido(id)));
+rutasPedidos.post("/", async (req, res, next) => {
+  try {
+    const datos = validarPedido(req.body);
+    // La distancia se calcula antes de la transacción (es una consulta externa)
+    const ruta = datos.entrega === "envio" ? await calcularRuta(datos.direccion) : null;
+    const id = crearPedido(datos, ruta);
+    res.status(201).json(aPedido(leerPedido(id)));
+  } catch (error) {
+    next(error);
+  }
 });
 
 /* ---------- Consultar ---------- */
@@ -259,11 +335,12 @@ rutasPedidos.get("/", requerirAdmin, (req, res) => {
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
     ORDER BY fecha DESC LIMIT 500`;
   const filas = db.prepare(sql).all(...params) as FilaPedido[];
-  res.json(filas.map(aPedido));
+  res.json(filas.map((f) => aPedido(f, true)));
 });
 
 // Público por id: lo usa el cliente para ver su comprobante. El id es un
 // UUID imposible de adivinar, por eso alcanza como "llave" del comprobante.
+// Nunca incluye los datos del flete.
 rutasPedidos.get("/:id", (req, res) => {
   res.json(aPedido(leerPedido(req.params.id)));
 });
@@ -276,10 +353,15 @@ const cancelar = db.transaction((id: string) => {
     .all(id) as { producto_id: string; cantidad: number }[];
   for (const item of items) reponer.run(item.cantidad, item.producto_id);
   db.prepare("UPDATE pedidos SET estado = 'cancelado' WHERE id = ?").run(id);
+  db.prepare(
+    "UPDATE fletes SET estado = 'cancelado' WHERE pedido_id = ? AND estado <> 'entregado'"
+  ).run(id);
 });
 
 rutasPedidos.patch("/:id", requerirAdmin, (req, res) => {
-  const actual = leerPedido(String(req.params.id));
+  const actual = leerPedido(
+    Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+  );
   const nuevo = req.body?.estado;
 
   if (nuevo === "pagado") {
@@ -296,5 +378,48 @@ rutasPedidos.patch("/:id", requerirAdmin, (req, res) => {
     throw new ErrorNegocio("Estado no válido");
   }
 
-  res.json(aPedido(leerPedido(actual.id)));
+  res.json(aPedido(leerPedido(actual.id), true));
+});
+
+/* ---------- Viaje del flete (admin) ---------- */
+
+// Cambios posibles: { estado: "enviado" | "entregado", ganancia: número }
+rutasPedidos.patch("/:id/flete", requerirAdmin, (req, res) => {
+  const pedido = leerPedido(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+  const flete = obtenerFlete.get(pedido.id) as FilaFlete | undefined;
+  if (!flete) throw new ErrorNegocio("Este pedido no tiene envío", 404);
+
+  const { estado, ganancia } = req.body ?? {};
+  const cerrado = flete.estado === "entregado" || flete.estado === "cancelado";
+  const ahora = new Date().toISOString();
+
+  if (ganancia !== undefined) {
+    if (!Number.isInteger(ganancia) || ganancia < 0 || ganancia > 100_000_000) {
+      throw new ErrorNegocio("La ganancia debe ser un número entero, 0 o más");
+    }
+    if (cerrado) throw new ErrorNegocio("Este viaje ya no se puede modificar", 409);
+    db.prepare("UPDATE fletes SET ganancia = ? WHERE id = ?").run(ganancia, flete.id);
+  }
+
+  if (estado !== undefined) {
+    if (estado !== "enviado" && estado !== "entregado") {
+      throw new ErrorNegocio("Estado no válido");
+    }
+    if (flete.estado === "cancelado") {
+      throw new ErrorNegocio("Este viaje está cancelado", 409);
+    }
+    if (estado === "enviado" && flete.estado === "pendiente") {
+      db.prepare("UPDATE fletes SET estado = 'enviado', enviado_en = ? WHERE id = ?").run(
+        ahora,
+        flete.id
+      );
+    }
+    if (estado === "entregado") {
+      db.prepare(
+        "UPDATE fletes SET estado = 'entregado', entregado_en = ? WHERE id = ?"
+      ).run(ahora, flete.id);
+    }
+  }
+
+  res.json(aPedido(leerPedido(pedido.id), true));
 });

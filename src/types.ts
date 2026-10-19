@@ -15,6 +15,21 @@ export interface ItemCarrito {
 
 export type MetodoPago = "efectivo" | "tarjeta";
 export type EstadoPedido = "pendiente" | "pagado" | "cancelado";
+export type Entrega = "retiro" | "envio";
+export type EstadoFlete = "pendiente" | "enviado" | "entregado" | "cancelado";
+
+// Solo lo ve el dueño en el panel
+export interface Flete {
+  id: string;
+  codigo: string;
+  estado: EstadoFlete;
+  distanciaKm: number | null;
+  ganancia: number;
+  destino: { direccion: string; lat: number | null; lng: number | null };
+  mensaje: string;
+  urlWhatsApp: string;
+  urlMapa: string;
+}
 
 export interface Pedido {
   id: string;
@@ -25,5 +40,7 @@ export interface Pedido {
   total: number;
   metodoPago: MetodoPago;
   estado: EstadoPedido;
+  entrega: Entrega;
   tarjetaUltimos4?: string;
+  flete?: Flete; // solo en las respuestas del admin
 }

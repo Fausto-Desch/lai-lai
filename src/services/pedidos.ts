@@ -1,10 +1,11 @@
-import type { EstadoPedido, MetodoPago, Pedido } from "../types";
+import type { Entrega, EstadoPedido, MetodoPago, Pedido } from "../types";
 import { api } from "./api";
 
 export interface NuevoPedido {
   comprador: Pedido["comprador"];
   items: { productoId: string; cantidad: number }[];
   metodoPago: MetodoPago;
+  entrega: Entrega;
   tarjetaUltimos4?: string;
 }
 
@@ -24,7 +25,7 @@ export const crearPedido = (datos: NuevoPedido) =>
 export const obtenerPedido = (id: string) =>
   api<Pedido>(`/pedidos/${id}`).catch(() => null);
 
-// Historial del admin
+// Historial del admin (incluye los datos del flete)
 export function listarPedidos(filtros: FiltrosPedidos = {}) {
   const params = new URLSearchParams();
   for (const [clave, valor] of Object.entries(filtros)) {
@@ -45,3 +46,14 @@ export const cambiarEstado = (id: string, estado: EstadoPedido) =>
 
 // Cancelar repone el stock (lo hace el servidor)
 export const cancelarPedido = (id: string) => cambiarEstado(id, "cancelado");
+
+// Viaje del flete: marcar como enviado o entregado, o cambiar la ganancia
+export const actualizarFlete = (
+  pedidoId: string,
+  cambios: { estado?: "enviado" | "entregado"; ganancia?: number }
+) =>
+  api<Pedido>(`/pedidos/${pedidoId}/flete`, {
+    metodo: "PATCH",
+    cuerpo: cambios,
+    auth: true,
+  });

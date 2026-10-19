@@ -69,6 +69,10 @@ export default function Comprobante() {
               : `Tarjeta terminada en ${pedido.tarjetaUltimos4}`}
           </p>
           <p>
+  <strong>Entrega:</strong>{" "}
+  {pedido.entrega === "envio" ? "Envío a domicilio" : "Retiro en el local"}
+</p>
+          <p>
             <strong>Estado:</strong> {estadoTexto}
           </p>
         </div>
@@ -100,12 +104,13 @@ export default function Comprobante() {
           Total: {formatearPrecio(pedido.total)}
         </p>
 
-        {pedido.estado === "pendiente" && (
-          <p className="rounded-lg bg-amber-50 p-3 text-center text-sm text-amber-900 print:border">
-            Presentá este comprobante en el local para abonar y retirar tu
-            compra.
-          </p>
-        )}
+      {pedido.estado === "pendiente" && (
+  <p className="rounded-lg bg-amber-50 p-3 text-center text-sm text-amber-900 print:border">
+    {pedido.entrega === "envio"
+      ? "Pagás en efectivo cuando recibís tu pedido."
+      : "Presentá este comprobante en el local para abonar y retirar tu compra."}
+  </p>
+)}
 
         <div className="mt-8 flex justify-center gap-3 print:hidden">
           <button
