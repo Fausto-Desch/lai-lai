@@ -52,30 +52,9 @@ export default function Navbar({ cantidadTotal, onAbrirCarrito }: Props) {
           </button>
         </div>
 
-        {/* Derecha: Acciones (Búsqueda, Carrito, Menú móvil) */}
-        <div className="flex items-center justify-end gap-5 md:w-1/3">
+        {/* Derecha: Acciones (Carrito y Menú móvil) */}
+        <div className="flex items-center justify-end gap-4 md:w-1/3">
           
-          {/* Botón de búsqueda estética */}
-          <button
-            type="button"
-            aria-label="Buscar"
-            className="text-slate-200 hover:text-white transition-colors"
-          >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </button>
-
           {/* Botón de Carrito (Estilo circular flotante con badge menta) */}
           <button
             onClick={onAbrirCarrito}

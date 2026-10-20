@@ -91,7 +91,6 @@ export default function Carrito({
 
     setProcesando(true);
     try {
-      // 1. Pago con tarjeta (simulado). Si lo rechazan, no se crea el pedido.
       let ultimos4: string | undefined;
       if (metodo === "tarjeta") {
         const res = await procesarPagoTarjeta(tarjeta, total);
@@ -102,8 +101,6 @@ export default function Carrito({
         ultimos4 = res.ultimos4;
       }
 
-      // 2. El servidor valida el stock, descuenta y registra el pedido
-      //    (y el viaje del flete, si es con envío)
       const nuevo = await crearPedido({
         comprador: {
           nombre: datos.nombre.trim(),
@@ -128,21 +125,20 @@ export default function Carrito({
       setError(
         e instanceof Error ? e.message : "No se pudo completar la compra"
       );
-      // Sin stock o producto eliminado: refrescamos el catálogo
       if (e instanceof ErrorApi && e.estado === 409) onCompraExitosa();
     } finally {
       setProcesando(false);
     }
   };
 
-  const input =
-    "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600";
+  const inputStyle =
+    "w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-medium text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white";
 
   const opcion = (activa: boolean) =>
-    `flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${
+    `flex flex-1 items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-xs font-bold transition-all ${
       activa
-        ? "border-red-700 bg-red-50 text-red-800"
-        : "border-gray-300 hover:bg-gray-50"
+        ? "border-slate-900 bg-slate-900 text-white shadow-md"
+        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
     }`;
 
   const botonEntrega = (valor: Entrega, texto: string) => (
@@ -167,121 +163,141 @@ export default function Carrito({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/40"
+      className="fixed inset-0 z-50 flex justify-end bg-slate-950/60 backdrop-blur-sm animate-fadeIn"
       onClick={cerrar}
     >
       <aside
-        className="flex h-full w-full max-w-md flex-col bg-white shadow-xl"
+        className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl border-l border-slate-100"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b px-5 py-4">
-          <h2 className="text-xl font-bold">Tu carrito</h2>
+        {/* Cabecera del Carrito */}
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🛒</span>
+            <h2 className="text-xl font-black tracking-tight text-slate-900">
+              Tu Carrito
+            </h2>
+          </div>
           <button
             onClick={cerrar}
-            className="text-2xl text-gray-500 hover:text-gray-800"
+            aria-label="Cerrar carrito"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-900 hover:text-white transition-all"
           >
-            ×
+            ✕
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5">
+        {/* Contenido Dinámico */}
+        <div className="flex-1 overflow-y-auto p-6">
           {pedido ? (
-            <div className="py-8 text-center">
-              <p className="text-lg font-semibold text-green-700">
-                ¡Pedido realizado! 🎉
+            <div className="py-12 text-center">
+              <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 text-2xl mb-4">
+                🎉
+              </div>
+              <p className="text-xl font-black text-slate-900">
+                ¡Pedido realizado con éxito!
               </p>
-              <p className="mt-4 text-sm text-gray-600">
-                Tu código de pedido es
+              <p className="mt-2 text-xs text-slate-500">
+                Tu código de seguimiento es
               </p>
-              <p className="my-2 text-3xl font-bold tracking-wider text-red-700">
-                {pedido.codigo}
+              <p className="my-3 text-3xl font-black tracking-wider text-rose-600 font-mono">
+                #{pedido.codigo}
               </p>
 
-              {pedido.entrega === "envio" ? (
-                <div className="text-sm text-gray-600">
+              <div className="rounded-2xl bg-slate-50 p-4 text-xs text-slate-600 my-6 border border-slate-100 leading-relaxed">
+                {pedido.entrega === "envio" ? (
+                  <>
+                    <p className="mb-1">
+                      Te lo enviamos a <strong className="text-slate-900 font-bold">{pedido.comprador.direccion}</strong>.
+                    </p>
+                    {pedido.metodoPago === "efectivo" ? (
+                      <p>
+                        Pagás <strong className="text-slate-900 font-bold">{formatearPrecio(pedido.total)}</strong> en efectivo cuando lo recibís.
+                      </p>
+                    ) : (
+                      <p>
+                        Pago aprobado con tarjeta terminada en <strong className="text-slate-900 font-bold">•••• {pedido.tarjetaUltimos4}</strong>.
+                      </p>
+                    )}
+                  </>
+                ) : pedido.metodoPago === "efectivo" ? (
                   <p>
-                    Te lo enviamos a <strong>{pedido.comprador.direccion}</strong>.
+                    Presentá este código en el local para abonar <strong className="text-slate-900 font-bold">{formatearPrecio(pedido.total)}</strong> y retirar tu compra.
                   </p>
-                  {pedido.metodoPago === "efectivo" ? (
-                    <p className="mt-1">
-                      Pagás{" "}
-                      <strong>{formatearPrecio(pedido.total)}</strong> en efectivo
-                      cuando lo recibís.
-                    </p>
-                  ) : (
-                    <p className="mt-1">
-                      Pago aprobado con tarjeta terminada en{" "}
-                      {pedido.tarjetaUltimos4}.
-                    </p>
-                  )}
-                </div>
-              ) : pedido.metodoPago === "efectivo" ? (
-                <p className="text-sm text-gray-600">
-                  Presentá este código en el local para abonar{" "}
-                  <strong>{formatearPrecio(pedido.total)}</strong> y retirar tu
-                  compra.
-                </p>
-              ) : (
-                <p className="text-sm text-gray-600">
-                  Pago aprobado con tarjeta terminada en{" "}
-                  {pedido.tarjetaUltimos4}.
-                </p>
-              )}
+                ) : (
+                  <p>
+                    Pago aprobado con tarjeta terminada en <strong className="text-slate-900 font-bold">•••• {pedido.tarjetaUltimos4}</strong>.
+                  </p>
+                )}
+              </div>
 
               <a
                 href={`/comprobante/${pedido.id}`}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-6 inline-block rounded-lg bg-red-700 px-6 py-3 font-semibold text-white hover:bg-red-800"
+                className="inline-flex items-center justify-center gap-2 w-full rounded-2xl bg-slate-900 py-3.5 text-xs font-bold text-white shadow-md hover:bg-rose-600 transition-all"
               >
-                Ver e imprimir comprobante
+                <span>📄</span>
+                <span>Ver e imprimir comprobante</span>
               </a>
             </div>
           ) : lineas.length === 0 ? (
-            <p className="py-12 text-center text-gray-500">
-              El carrito está vacío.
-            </p>
+            <div className="py-24 text-center">
+              <span className="text-5xl block mb-3 opacity-40">🛍️</span>
+              <p className="text-base font-bold text-slate-800">
+                Tu carrito está vacío
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                Explora el catálogo y añade tus productos favoritos.
+              </p>
+            </div>
           ) : (
             <>
-              <ul className="flex flex-col gap-4">
+              {/* Lista de Ítems */}
+              <ul className="flex flex-col gap-4 divide-y divide-slate-100">
                 {lineas.map(({ producto, cantidad }) => (
-                  <li
-                    key={producto.id}
-                    className="flex items-center gap-3 border-b pb-4"
-                  >
-                    <div className="flex-1">
-                      <p className="font-medium">{producto.nombre}</p>
-                      <p className="text-sm text-gray-500">
+                  <li key={producto.id} className="pt-4 first:pt-0 flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm text-slate-900 truncate">
+                        {producto.nombre}
+                      </p>
+                      <p className="text-xs text-slate-400 font-medium">
                         {formatearPrecio(producto.precio)} c/u
                       </p>
                     </div>
+
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() =>
-                          cambiarCantidad(producto.id, cantidad - 1)
-                        }
-                        className="h-8 w-8 rounded border hover:bg-gray-100"
-                      >
-                        −
-                      </button>
-                      <span className="w-6 text-center">{cantidad}</span>
-                      <button
-                        onClick={() =>
-                          cambiarCantidad(producto.id, cantidad + 1)
-                        }
-                        disabled={cantidad >= producto.stock}
-                        className="h-8 w-8 rounded border hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        +
-                      </button>
+                      <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 overflow-hidden shadow-xs">
+                        <button
+                          onClick={() =>
+                            cambiarCantidad(producto.id, cantidad - 1)
+                          }
+                          className="h-8 w-8 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-200 transition-colors"
+                        >
+                          −
+                        </button>
+                        <span className="w-7 text-center text-xs font-bold text-slate-900">
+                          {cantidad}
+                        </span>
+                        <button
+                          onClick={() =>
+                            cambiarCantidad(producto.id, cantidad + 1)
+                          }
+                          disabled={cantidad >= producto.stock}
+                          className="h-8 w-8 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
+
                     <div className="w-24 text-right">
-                      <p className="font-semibold">
+                      <p className="text-sm font-black text-slate-900">
                         {formatearPrecio(producto.precio * cantidad)}
                       </p>
                       <button
                         onClick={() => quitar(producto.id)}
-                        className="text-xs text-red-600 hover:underline"
+                        className="text-[11px] font-bold text-rose-500 hover:underline mt-0.5 block ml-auto"
                       >
                         Quitar
                       </button>
@@ -290,66 +306,75 @@ export default function Carrito({
                 ))}
               </ul>
 
-              <div className="mt-6 flex flex-col gap-3">
-                <h3 className="font-semibold">Entrega</h3>
-                <div className="flex gap-2">
-                  {botonEntrega("retiro", "🏪 Retiro en el local")}
+              {/* Opción de Entrega */}
+              <div className="mt-8 border-t border-slate-100 pt-6">
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">
+                  Método de Entrega
+                </h3>
+                <div className="flex gap-3">
+                  {botonEntrega("retiro", "🏪 Retiro en local")}
                   {botonEntrega("envio", "🚚 Envío a domicilio")}
                 </div>
               </div>
 
-              <div className="mt-6 flex flex-col gap-3">
-                <h3 className="font-semibold">Tus datos</h3>
-                <input
-                  className={input}
-                  placeholder="Nombre y apellido"
-                  value={datos.nombre}
-                  onChange={(e) =>
-                    setDatos({ ...datos, nombre: e.target.value })
-                  }
-                />
-                <input
-                  className={input}
-                  placeholder="Teléfono"
-                  value={datos.telefono}
-                  onChange={(e) =>
-                    setDatos({ ...datos, telefono: e.target.value })
-                  }
-                />
-                {entrega === "envio" && (
+              {/* Formulario de Datos del Comprador */}
+              <div className="mt-6 border-t border-slate-100 pt-6">
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">
+                  Tus Datos
+                </h3>
+                <div className="flex flex-col gap-3">
                   <input
-                    className={input}
-                    placeholder="Dirección de entrega (calle, número, ciudad)"
-                    value={datos.direccion}
+                    className={inputStyle}
+                    placeholder="Nombre y apellido"
+                    value={datos.nombre}
                     onChange={(e) =>
-                      setDatos({ ...datos, direccion: e.target.value })
+                      setDatos({ ...datos, nombre: e.target.value })
                     }
                   />
-                )}
+                  <input
+                    className={inputStyle}
+                    placeholder="Teléfono de contacto"
+                    value={datos.telefono}
+                    onChange={(e) =>
+                      setDatos({ ...datos, telefono: e.target.value })
+                    }
+                  />
+                  {entrega === "envio" && (
+                    <input
+                      className={inputStyle}
+                      placeholder="Dirección de entrega (calle, número, ciudad)"
+                      value={datos.direccion}
+                      onChange={(e) =>
+                        setDatos({ ...datos, direccion: e.target.value })
+                      }
+                    />
+                  )}
+                </div>
               </div>
 
-              <div className="mt-6 flex flex-col gap-3">
-                <h3 className="font-semibold">Forma de pago</h3>
-                <div className="flex gap-2">
+              {/* Forma de Pago */}
+              <div className="mt-6 border-t border-slate-100 pt-6">
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">
+                  Forma de Pago
+                </h3>
+                <div className="flex gap-3 mb-4">
                   {botonMetodo(
                     "efectivo",
-                    entrega === "envio"
-                      ? "💵 Efectivo al recibir"
-                      : "💵 Efectivo en el local"
+                    entrega === "envio" ? "💵 Efectivo al recibir" : "💵 Efectivo en local"
                   )}
                   {botonMetodo("tarjeta", "💳 Tarjeta")}
                 </div>
 
                 {metodo === "efectivo" ? (
-                  <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+                  <div className="rounded-2xl bg-amber-50/80 border border-amber-200/60 p-4 text-xs font-medium text-amber-900 leading-relaxed">
                     {entrega === "envio"
-                      ? "Pagás en efectivo cuando te entregamos el pedido."
-                      : "Te damos un comprobante con un código. Lo presentás en el local, abonás y retirás tu compra. Reservamos tu stock mientras tanto."}
-                  </p>
+                      ? "💵 Pagás en efectivo cuando te entregamos el pedido en tu domicilio."
+                      : "💡 Te damos un comprobante con un código. Lo presentás en el local, abonás y retirás tu compra. Reservamos tu stock mientras tanto."}
+                  </div>
                 ) : (
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 p-4 border border-slate-100">
                     <input
-                      className={input}
+                      className={inputStyle}
                       placeholder="Número de tarjeta"
                       inputMode="numeric"
                       value={tarjeta.numero}
@@ -361,7 +386,7 @@ export default function Carrito({
                       }
                     />
                     <input
-                      className={input}
+                      className={inputStyle}
                       placeholder="Nombre del titular"
                       value={tarjeta.titular}
                       onChange={(e) =>
@@ -370,7 +395,7 @@ export default function Carrito({
                     />
                     <div className="flex gap-3">
                       <input
-                        className={input}
+                        className={inputStyle}
                         placeholder="MM/AA"
                         inputMode="numeric"
                         value={tarjeta.vencimiento}
@@ -382,7 +407,7 @@ export default function Carrito({
                         }
                       />
                       <input
-                        className={input}
+                        className={inputStyle}
                         placeholder="CVV"
                         inputMode="numeric"
                         maxLength={4}
@@ -395,9 +420,8 @@ export default function Carrito({
                         }
                       />
                     </div>
-                    <p className="text-xs text-gray-500">
-                      Modo demostración: no se realiza ningún cobro real y los
-                      datos de la tarjeta no se guardan.
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      🔒 Modo demostración: no se realiza ningún cobro real.
                     </p>
                   </div>
                 )}
@@ -406,27 +430,38 @@ export default function Carrito({
           )}
         </div>
 
+        {/* Pie del Carrito / Botón de Confirmación */}
         {!pedido && lineas.length > 0 && (
-          <div className="border-t p-5">
+          <div className="border-t border-slate-100 bg-slate-50/50 p-6">
             {error && (
-              <p className="mb-3 rounded bg-red-50 p-2 text-sm text-red-700">
-                {error}
-              </p>
+              <div className="mb-4 rounded-xl bg-rose-50 border border-rose-100 p-3 text-xs font-bold text-rose-600">
+                ⚠️ {error}
+              </div>
             )}
-            <div className="mb-4 flex justify-between text-lg font-bold">
-              <span>Total</span>
-              <span>{formatearPrecio(total)}</span>
+            <div className="mb-4 flex items-baseline justify-between">
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Total a pagar</span>
+              <span className="text-2xl font-black text-slate-900">
+                {formatearPrecio(total)}
+              </span>
             </div>
             <button
               onClick={confirmar}
               disabled={procesando}
-              className="w-full rounded-lg bg-red-700 py-3 font-semibold text-white hover:bg-red-800 disabled:cursor-wait disabled:opacity-60"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white shadow-lg transition-all hover:bg-rose-600 active:scale-98 disabled:cursor-wait disabled:opacity-60"
             >
-              {procesando
-                ? "Procesando..."
-                : metodo === "tarjeta"
-                ? "Pagar con tarjeta"
-                : "Confirmar pedido"}
+              {procesando ? (
+                "Procesando..."
+              ) : metodo === "tarjeta" ? (
+                <>
+                  <span>💳</span>
+                  <span>Pagar {formatearPrecio(total)}</span>
+                </>
+              ) : (
+                <>
+                  <span>✨</span>
+                  <span>Confirmar pedido</span>
+                </>
+              )}
             </button>
           </div>
         )}
