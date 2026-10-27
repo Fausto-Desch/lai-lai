@@ -48,14 +48,22 @@ export default function ListaPedidos({ onCambio }: Props) {
   const [nuevos, setNuevos] = useState<Set<string>>(new Set());
   const [busqueda, setBusqueda] = useState("");
   const [filtro, setFiltro] = useState<"todos" | EstadoPedido>("todos");
+  const [dia, setDia] = useState("");
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
   const vistos = useRef<Set<string> | null>(null);
 
   const cargar = useCallback(() => {
-    listarPedidos()
+    listarPedidos({
+      estado: filtro === "todos" ? undefined : filtro,
+      dia: dia || undefined,
+      desde: desde || undefined,
+      hasta: hasta || undefined,
+      q: busqueda || undefined,
+    })
       .then((lista) => {
         setPedidos(lista);
 
-        // La primera carga no cuenta: solo marcamos lo que llega después
         if (vistos.current === null) {
           vistos.current = new Set(lista.map((p) => p.id));
           return;
@@ -70,9 +78,8 @@ export default function ListaPedidos({ onCambio }: Props) {
       .catch(() => {
         // si falla una actualización, se reintenta en la próxima
       });
-  }, []);
+  }, [dia, desde, hasta, filtro, busqueda]);
 
-  // Carga inicial y actualización automática
   useEffect(() => {
     cargar();
     const temporizador = window.setInterval(cargar, INTERVALO_MS);
@@ -161,23 +168,71 @@ export default function ListaPedidos({ onCambio }: Props) {
         Pedidos ({pedidos.length}) · {pendientes} pendientes de pago
       </h2>
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-        <input
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar por código o nombre (ej. LL-7K2M9P)"
-          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600"
-        />
-        <select
-          value={filtro}
-          onChange={(e) => setFiltro(e.target.value as "todos" | EstadoPedido)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600"
-        >
-          <option value="todos">Todos</option>
-          <option value="pendiente">Pendientes</option>
-          <option value="pagado">Pagados</option>
-          <option value="cancelado">Cancelados</option>
-        </select>
+      <div className="mb-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por código o nombre (ej. LL-7K2M9P)"
+            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600"
+          />
+          <select
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value as "todos" | EstadoPedido)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600"
+          >
+            <option value="todos">Todos</option>
+            <option value="pendiente">Pendientes</option>
+            <option value="pagado">Pagados</option>
+            <option value="cancelado">Cancelados</option>
+          </select>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-4">
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-600">
+            <span>Día</span>
+            <input
+              type="date"
+              value={dia}
+              onChange={(e) => setDia(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-600">
+            <span>Desde</span>
+            <input
+              type="date"
+              value={desde}
+              onChange={(e) => setDesde(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-600">
+            <span>Hasta</span>
+            <input
+              type="date"
+              value={hasta}
+              onChange={(e) => setHasta(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600"
+            />
+          </label>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={() => {
+                setDia("");
+                setDesde("");
+                setHasta("");
+              }}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+            >
+              Limpiar filtros
+            </button>
+          </div>
+        </div>
       </div>
 
       {visibles.length === 0 ? (

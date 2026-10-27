@@ -12,8 +12,9 @@ export interface NuevoPedido {
 export interface FiltrosPedidos {
   estado?: EstadoPedido;
   metodo?: MetodoPago;
-  desde?: string; // fecha ISO
-  hasta?: string; // fecha ISO
+  dia?: string;
+  desde?: string; // fecha ISO o YYYY-MM-DD
+  hasta?: string; // fecha ISO o YYYY-MM-DD
   q?: string; // código o nombre del cliente
 }
 
@@ -28,9 +29,12 @@ export const obtenerPedido = (id: string) =>
 // Historial del admin (incluye los datos del flete)
 export function listarPedidos(filtros: FiltrosPedidos = {}) {
   const params = new URLSearchParams();
+
   for (const [clave, valor] of Object.entries(filtros)) {
-    if (valor) params.set(clave, valor);
+    if (valor === undefined || valor === null || valor === "") continue;
+    params.set(clave, String(valor));
   }
+
   const consulta = params.toString();
   return api<Pedido[]>(`/pedidos${consulta ? `?${consulta}` : ""}`, {
     auth: true,
