@@ -1,16 +1,10 @@
 import { useState } from "react";
-import type { Entrega, MetodoPago, Pedido, Producto } from "../types";
+import type { MetodoPago, Pedido, Producto } from "../types";
 import { useCarrito } from "../context/CarritoContext";
 import { crearPedido } from "../services/pedidos";
 import { ErrorApi } from "../services/api";
-import { procesarPagoTarjeta, type DatosTarjeta } from "../services/pagos";
 import { formatearPrecio } from "../utils/formato";
-import {
-  formatearNumero,
-  formatearVencimiento,
-  luhnValido,
-  vencimientoValido,
-} from "../utils/tarjeta";
+import { LOCAL_INFO } from "../config";
 
 interface Props {
   abierto: boolean;
@@ -20,12 +14,6 @@ interface Props {
 }
 
 const datosVacios = { nombre: "", telefono: "", direccion: "" };
-const tarjetaVacia: DatosTarjeta = {
-  numero: "",
-  titular: "",
-  vencimiento: "",
-  cvv: "",
-};
 
 export default function Carrito({
   abierto,
@@ -35,9 +23,7 @@ export default function Carrito({
 }: Props) {
   const { items, cambiarCantidad, quitar, vaciar } = useCarrito();
   const [datos, setDatos] = useState(datosVacios);
-  const [entrega, setEntrega] = useState<Entrega>("retiro");
   const [metodo, setMetodo] = useState<MetodoPago>("efectivo");
-  const [tarjeta, setTarjeta] = useState(tarjetaVacia);
   const [error, setError] = useState("");
   const [procesando, setProcesando] = useState(false);
   const [pedido, setPedido] = useState<Pedido | null>(null);
@@ -60,16 +46,6 @@ export default function Carrito({
     onCerrar();
   };
 
-  const validarTarjeta = (): string | null => {
-    if (!luhnValido(tarjeta.numero)) return "El número de tarjeta no es válido";
-    if (!tarjeta.titular.trim()) return "Ingresá el nombre del titular";
-    if (!vencimientoValido(tarjeta.vencimiento))
-      return "El vencimiento no es válido (MM/AA)";
-    if (!/^\d{3,4}$/.test(tarjeta.cvv))
-      return "El código de seguridad no es válido";
-    return null;
-  };
-
   const confirmar = async () => {
     setError("");
 
@@ -77,48 +53,25 @@ export default function Carrito({
       setError("Completá tu nombre y teléfono para continuar");
       return;
     }
-    if (entrega === "envio" && datos.direccion.trim().length < 5) {
-      setError("Ingresá la dirección de entrega");
-      return;
-    }
-    if (metodo === "tarjeta") {
-      const msg = validarTarjeta();
-      if (msg) {
-        setError(msg);
-        return;
-      }
-    }
 
     setProcesando(true);
     try {
-      let ultimos4: string | undefined;
-      if (metodo === "tarjeta") {
-        const res = await procesarPagoTarjeta(tarjeta, total);
-        if (!res.aprobado) {
-          setError(res.motivo ?? "No se pudo procesar el pago");
-          return;
-        }
-        ultimos4 = res.ultimos4;
-      }
-
       const nuevo = await crearPedido({
         comprador: {
           nombre: datos.nombre.trim(),
           telefono: datos.telefono.trim(),
-          direccion: entrega === "envio" ? datos.direccion.trim() : "",
+          direccion: "",
         },
         items: lineas.map((l) => ({
           productoId: l.producto.id,
           cantidad: l.cantidad,
         })),
-        metodoPago: metodo,
-        entrega,
-        tarjetaUltimos4: ultimos4,
+        metodoPago: "efectivo",
+        entrega: "retiro",
       });
 
       vaciar();
       setDatos(datosVacios);
-      setTarjeta(tarjetaVacia);
       setPedido(nuevo);
       onCompraExitosa();
     } catch (e) {
@@ -141,16 +94,6 @@ export default function Carrito({
         : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
     }`;
 
-  const botonEntrega = (valor: Entrega, texto: string) => (
-    <button
-      type="button"
-      onClick={() => setEntrega(valor)}
-      className={opcion(entrega === valor)}
-    >
-      {texto}
-    </button>
-  );
-
   const botonMetodo = (valor: MetodoPago, texto: string) => (
     <button
       type="button"
@@ -160,6 +103,25 @@ export default function Carrito({
       {texto}
     </button>
   );
+
+  const pedidoUrl = pedido ? `${window.location.origin}/comprobante/${pedido.id}` : "";
+  const whatsappNumero = LOCAL_INFO.whatsapp.replace(/\D/g, "");
+  const mensajePedidoWhatsApp = pedido
+    ? [
+        "Nuevo pedido recibido",
+        `Código: ${pedido.codigo}`,
+        `Cliente: ${pedido.comprador.nombre}`,
+        `Compra: ${pedido.items
+          .map((item) => `${item.cantidad}x ${item.nombre}`)
+          .join(", ") || "Sin detalle"}`,
+        `Monto a pagar: ${formatearPrecio(pedido.total)}`,
+        `Comprobante: ${pedidoUrl}`,
+      ].join("\n")
+    : "";
+  const urlWhatsAppPedido =
+    whatsappNumero && mensajePedidoWhatsApp
+      ? `https://wa.me/${whatsappNumero}?text=${encodeURIComponent(mensajePedidoWhatsApp)}`
+      : "";
 
   return (
     <div
@@ -205,41 +167,34 @@ export default function Carrito({
               </p>
 
               <div className="rounded-2xl bg-slate-50 p-4 text-xs text-slate-600 my-6 border border-slate-100 leading-relaxed">
-                {pedido.entrega === "envio" ? (
-                  <>
-                    <p className="mb-1">
-                      Te lo enviamos a <strong className="text-slate-900 font-bold">{pedido.comprador.direccion}</strong>.
-                    </p>
-                    {pedido.metodoPago === "efectivo" ? (
-                      <p>
-                        Pagás <strong className="text-slate-900 font-bold">{formatearPrecio(pedido.total)}</strong> en efectivo cuando lo recibís.
-                      </p>
-                    ) : (
-                      <p>
-                        Pago aprobado con tarjeta terminada en <strong className="text-slate-900 font-bold">•••• {pedido.tarjetaUltimos4}</strong>.
-                      </p>
-                    )}
-                  </>
-                ) : pedido.metodoPago === "efectivo" ? (
-                  <p>
-                    Presentá este código en el local para abonar <strong className="text-slate-900 font-bold">{formatearPrecio(pedido.total)}</strong> y retirar tu compra.
-                  </p>
-                ) : (
-                  <p>
-                    Pago aprobado con tarjeta terminada en <strong className="text-slate-900 font-bold">•••• {pedido.tarjetaUltimos4}</strong>.
-                  </p>
-                )}
+                <p>
+                  Presentá este código en el local para abonar <strong className="text-slate-900 font-bold">{formatearPrecio(pedido.total)}</strong> y retirar tu compra.
+                </p>
               </div>
 
-              <a
-                href={`/comprobante/${pedido.id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center gap-2 w-full rounded-2xl bg-slate-900 py-3.5 text-xs font-bold text-white shadow-md hover:bg-rose-600 transition-all"
-              >
-                <span>📄</span>
-                <span>Ver e imprimir comprobante</span>
-              </a>
+              <div className="flex flex-col gap-3">
+                <a
+                  href={`/comprobante/${pedido.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-2 w-full rounded-2xl bg-slate-900 py-3.5 text-xs font-bold text-white shadow-md hover:bg-rose-600 transition-all"
+                >
+                  <span>📄</span>
+                  <span>Ver e imprimir comprobante</span>
+                </a>
+
+                {urlWhatsAppPedido && (
+                  <a
+                    href={urlWhatsAppPedido}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center justify-center gap-2 w-full rounded-2xl border border-emerald-200 bg-emerald-50 py-3.5 text-xs font-bold text-emerald-700 shadow-sm hover:bg-emerald-100 transition-all"
+                  >
+                    <span>💬</span>
+                    <span>Enviar comprobante por WhatsApp</span>
+                  </a>
+                )}
+              </div>
             </div>
           ) : lineas.length === 0 ? (
             <div className="py-24 text-center">
@@ -306,14 +261,12 @@ export default function Carrito({
                 ))}
               </ul>
 
-              {/* Opción de Entrega */}
               <div className="mt-8 border-t border-slate-100 pt-6">
                 <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">
-                  Método de Entrega
+                  Método de entrega
                 </h3>
-                <div className="flex gap-3">
-                  {botonEntrega("retiro", "🏪 Retiro en local")}
-                  {botonEntrega("envio", "🚚 Envío a domicilio")}
+                <div className="rounded-2xl bg-slate-100 border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+                  🏪 Retiro en local
                 </div>
               </div>
 
@@ -339,16 +292,6 @@ export default function Carrito({
                       setDatos({ ...datos, telefono: e.target.value })
                     }
                   />
-                  {entrega === "envio" && (
-                    <input
-                      className={inputStyle}
-                      placeholder="Dirección de entrega (calle, número, ciudad)"
-                      value={datos.direccion}
-                      onChange={(e) =>
-                        setDatos({ ...datos, direccion: e.target.value })
-                      }
-                    />
-                  )}
                 </div>
               </div>
 
@@ -360,71 +303,13 @@ export default function Carrito({
                 <div className="flex gap-3 mb-4">
                   {botonMetodo(
                     "efectivo",
-                    entrega === "envio" ? "💵 Efectivo al recibir" : "💵 Efectivo en local"
+                    "💵 Efectivo en local / Billetera virtual"
                   )}
-                  {botonMetodo("tarjeta", "💳 Tarjeta")}
                 </div>
 
-                {metodo === "efectivo" ? (
-                  <div className="rounded-2xl bg-amber-50/80 border border-amber-200/60 p-4 text-xs font-medium text-amber-900 leading-relaxed">
-                    {entrega === "envio"
-                      ? "💵 Pagás en efectivo cuando te entregamos el pedido en tu domicilio."
-                      : "💡 Te damos un comprobante con un código. Lo presentás en el local, abonás y retirás tu compra. Reservamos tu stock mientras tanto."}
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 p-4 border border-slate-100">
-                    <input
-                      className={inputStyle}
-                      placeholder="Número de tarjeta"
-                      inputMode="numeric"
-                      value={tarjeta.numero}
-                      onChange={(e) =>
-                        setTarjeta({
-                          ...tarjeta,
-                          numero: formatearNumero(e.target.value),
-                        })
-                      }
-                    />
-                    <input
-                      className={inputStyle}
-                      placeholder="Nombre del titular"
-                      value={tarjeta.titular}
-                      onChange={(e) =>
-                        setTarjeta({ ...tarjeta, titular: e.target.value })
-                      }
-                    />
-                    <div className="flex gap-3">
-                      <input
-                        className={inputStyle}
-                        placeholder="MM/AA"
-                        inputMode="numeric"
-                        value={tarjeta.vencimiento}
-                        onChange={(e) =>
-                          setTarjeta({
-                            ...tarjeta,
-                            vencimiento: formatearVencimiento(e.target.value),
-                          })
-                        }
-                      />
-                      <input
-                        className={inputStyle}
-                        placeholder="CVV"
-                        inputMode="numeric"
-                        maxLength={4}
-                        value={tarjeta.cvv}
-                        onChange={(e) =>
-                          setTarjeta({
-                            ...tarjeta,
-                            cvv: e.target.value.replace(/\D/g, ""),
-                          })
-                        }
-                      />
-                    </div>
-                    <p className="text-[11px] text-slate-400 font-medium">
-                      🔒 Modo demostración: no se realiza ningún cobro real.
-                    </p>
-                  </div>
-                )}
+                <div className="rounded-2xl bg-amber-50/80 border border-amber-200/60 p-4 text-xs font-medium text-amber-900 leading-relaxed">
+                  💡 Te damos un comprobante con un código. Lo presentás en el local, abonás y retirás tu compra. Reservamos tu stock mientras tanto.
+                </div>
               </div>
             </>
           )}
@@ -451,11 +336,6 @@ export default function Carrito({
             >
               {procesando ? (
                 "Procesando..."
-              ) : metodo === "tarjeta" ? (
-                <>
-                  <span>💳</span>
-                  <span>Pagar {formatearPrecio(total)}</span>
-                </>
               ) : (
                 <>
                   <span>✨</span>
